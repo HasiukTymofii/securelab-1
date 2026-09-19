@@ -25,6 +25,5 @@ Accept: application/json
 GET {{host}}/api/incidents?status=Unknown
 Accept: application/json
 
-### Lab 1 extension point: expected 501 before student implementation
-GET {{host}}/api/incidents/severity-summary
-Accept: application/json
+### # Очікується 200. Політика: лише наявні групи (Low, Medium, High по 1; Critical відсутній).
+# Порядок: лексикографічний за severity (High, Low, Medium).

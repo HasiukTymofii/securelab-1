@@ -137,7 +137,7 @@ summaryBtn?.addEventListener("click", async () => {
 
     summaryContainer.appendChild(list);
   } catch (error) {
-    summaryContainer.textContent = `Помилка: ${error.message}`;
+    summaryContainer.textContent = "не вдалося завантажити зведення";
   } finally {
     summaryBtn.disabled = false;
   }
