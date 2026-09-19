@@ -109,3 +109,36 @@ filterForm.addEventListener("submit", (event) => {
 });
 
 loadIncidents();
+const summaryBtn = document.getElementById("summary-btn");
+const summaryContainer = document.getElementById("summary-container");
+
+summaryBtn?.addEventListener("click", async () => {
+  summaryBtn.disabled = true;
+  summaryContainer.textContent = "Завантаження...";
+
+  try {
+    const data = await apiFetch("/api/incidents/severity-summary");
+    summaryContainer.replaceChildren();
+
+    if (!data.length) {
+      summaryContainer.textContent = "Немає даних.";
+      return;
+    }
+
+    const list = document.createElement("ul");
+    list.style.margin = "0";
+    list.style.paddingLeft = "1.2rem";
+
+    for (const item of data) {
+      const li = document.createElement("li");
+      li.textContent = `${item.severity}: ${item.count}`;
+      list.appendChild(li);
+    }
+
+    summaryContainer.appendChild(list);
+  } catch (error) {
+    summaryContainer.textContent = "не вдалося завантажити зведення";
+  } finally {
+    summaryBtn.disabled = false;
+  }
+});

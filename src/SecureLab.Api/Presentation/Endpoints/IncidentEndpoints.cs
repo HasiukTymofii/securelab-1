@@ -21,12 +21,10 @@ public static class IncidentEndpoints
             .Produces<IncidentDetailsResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapGet("/severity-summary", () => Results.Problem(
-                title: "Точку розширення ще не реалізовано",
-                detail: "Завершіть цей endpoint під час лабораторної роботи № 1.",
-                statusCode: StatusCodes.Status501NotImplemented))
+       group.MapGet("/severity-summary", GetSeveritySummaryAsync)
             .WithName("GetIncidentSeveritySummary")
-            .ProducesProblem(StatusCodes.Status501NotImplemented);
+            .Produces<IReadOnlyList<IncidentSeveritySummaryResponse>>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest);
 
         return endpoints;
     }
@@ -66,5 +64,25 @@ public static class IncidentEndpoints
                 detail: $"Інцидент '{id}' не існує.",
                 statusCode: StatusCodes.Status404NotFound)
             : Results.Ok(incident);
+    }
+
+private static async Task<IResult> GetSeveritySummaryAsync(
+        string? status,
+        IncidentQueries queries,
+        HttpContext ctx,
+        CancellationToken ct)
+    {
+        IncidentStatus? filter = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<IncidentStatus>(status, true, out var parsed) || !Enum.IsDefined(parsed))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = [$"Invalid status: '{status}'"] });
+
+            filter = parsed;
+        }
+
+        var traceId = System.Diagnostics.Activity.Current?.Id ?? ctx.TraceIdentifier;
+        var data = await queries.GetSeveritySummaryAsync(filter, traceId, ct);
+        return Results.Ok(data);
     }
 }
