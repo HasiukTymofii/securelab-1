@@ -5,7 +5,7 @@
 - Варіант: 2-A «Трекер інцидентів».
 - Гілка: робоча `lab/1-system`, основна `master`.
 - Фінальний тег: `v0.1.0` (annotated).
-- Commit hash: хеш перевіреного стану на `master` вказано в PDF-звіті (`git rev-parse v0.1.0`). Хеш функціонального коміту в `lab/1-system`: `6989e30`.
+- Commit hash: ca1f977a5abf8e207b230f930d70427a9ae124a1 Хеш функціонального коміту в `lab/1-system`: `6989e30`.
 
 ## 2. Змінений маршрут
 
@@ -40,7 +40,7 @@ Endpoint перевіряє необов'язковий параметр `status
 ## 3. Виконані зміни
 
 - `Presentation/Contracts/IncidentResponses.cs`: DTO `IncidentSeveritySummaryResponse(string Severity, int Count)` без зайвих полів entity.
-- `Application/Incidents/IncidentQueries.cs`: метод `GetSeveritySummaryAsync` (`AsNoTracking`, `GroupBy`, `Count`, `ToListAsync`) і структурований log з кількістю груп.
+- `Application/Incidents/IncidentQueries.cs`: метод `GetSeveritySummaryAsync` (`AsNoTracking`, `GroupBy`, `Count`, `ToListAsync`) і структурований log з параметром status і traceId.
 - `Presentation/Endpoints/IncidentEndpoints.cs`: замість baseline 501 endpoint з DI, `CancellationToken`, `Results.Ok(...)` і metadata 200/400.
 - `Client/index.html`, `Client/app.js`: кнопка «Оновити», стани «Завантаження...», «Немає даних.» і безпечна помилка «не вдалося завантажити зведення». Вивід через `createElement` + `textContent`, без `innerHTML`.
 - `tests/http/incidents.http`: коментар оновлено з очікування 501 на 200.
@@ -54,17 +54,17 @@ Endpoint перевіряє необов'язковий параметр `status
 | ID | Передумови | Дія | Очікувано | Фактично | Доказ |
 |---|---|---|---|---|---|
 | T-01 | PostgreSQL healthy, API запущено | GET /health | 200 | 200, `{"status":"ready"}` | PDF Рис. 6, 7 |
-| T-02 | Відновлений seed | GET /api/incidents?status=Triaged | 200, список за фільтром | 200, один інцидент «Підозрілий лист із вкладенням» (Medium, Triaged) | PDF Рис. 29 |
-| T-03 | Відновлений seed | GET /api/incidents?status=Resolved | 200, `[]` | 200, `[]` | PDF Рис. 26 |
-| T-04 | Відновлений seed | GET /api/incidents/99999999-9999-9999-9999-999999999999 | 404 Problem Details | 404, `application/problem+json`, «Інцидент не знайдено», є traceId | PDF Рис. 26 |
-| T-05 | Відновлений seed | GET /api/incidents?status=Unknown | 400 Validation Problem Details | 400, `application/problem+json`, перелік допустимих значень статусу | PDF Рис. 29 |
-| T-06 | Реалізовано етап 3, seed відновлено | GET /api/incidents/severity-summary | 200; High, Low, Medium по 1; Critical відсутній | 200; `[{"severity":"High","count":1},{"severity":"Low","count":1},{"severity":"Medium","count":1}]` | PDF Рис. 26, 28 |
-| T-07 | API і клієнт запущено | Натиснути «Оновити» | UI безпечно показує результат | Список High: 1, Low: 1, Medium: 1; запит GET 200 `application/json` | PDF Рис. 23, 28 |
-| T-08 | Після зміни даних | `--reset-database`, повторити T-02 і T-06 | Seed відновлено | Дані очищено й заповнено наново; T-02 і T-06 повернули ті самі результати | PDF Рис. 31, 32 |
+| T-02 | Відновлений seed | GET /api/incidents?status=Triaged | 200, список за фільтром | 200, один інцидент «Підозрілий лист із вкладенням» (Medium, Triaged) | PDF Рис. 31 |
+| T-03 | Відновлений seed | GET /api/incidents?status=Resolved | 200, `[]` | 200, `[]` | PDF Рис. 28 |
+| T-04 | Відновлений seed | GET /api/incidents/99999999-9999-9999-9999-999999999999 | 404 Problem Details | 404, `application/problem+json`, «Інцидент не знайдено», є traceId | PDF Рис. 28 |
+| T-05 | Відновлений seed | GET /api/incidents?status=Unknown | 400 Validation Problem Details | 400, `application/problem+json`, перелік допустимих значень статусу | PDF Рис. 31 |
+| T-06 | Реалізовано етап 3, seed відновлено | GET /api/incidents/severity-summary | 200; High, Low, Medium по 1; Critical відсутній | 200; `[{"severity":"High","count":1},{"severity":"Low","count":1},{"severity":"Medium","count":1}]` | PDF Рис. 28 |
+| T-07 | API і клієнт запущено | Натиснути «Оновити» | UI безпечно показує результат | Список High: 1, Low: 1, Medium: 1; запит GET 200 `application/json` | PDF Рис. 25 |
+| T-08 | Після зміни даних | `--reset-database`, повторити T-02 і T-06 | Seed відновлено | Дані очищено й заповнено наново; T-02 і T-06 повернули ті самі результати | PDF Рис. 33, 34|
 
-Додатково: до реалізації endpoint повертав 501 (PDF Рис. 8). Некоректний `status` для summary дає 400 (PDF Рис. 24).
+Додатково: до реалізації endpoint повертав 501 (PDF Рис. 8). Некоректний `status` для summary дає 400 (PDF Рис. 26).
 
-Автоматична перевірка: `dotnet test tests/SecureLab.Api.Tests/SecureLab.Api.Tests.csproj --configuration Release` → `total: 4, failed: 0, succeeded: 4` (PDF Рис. 30, після злиття в `master`).
+Автоматична перевірка: `dotnet test tests/SecureLab.Api.Tests/SecureLab.Api.Tests.csproj --configuration Release` → `total: 4, failed: 0, succeeded: 4` (PDF Рис. 32, після злиття в `master`).
 
 Перевірка на секрети: перед кожним commit переглянуто `git status`, `git diff` і `git diff --staged`. Файли `.env`, паролі, токени, cookies, дампи БД і журнали в коміти не потрапили.
 

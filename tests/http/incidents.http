@@ -25,5 +25,7 @@ Accept: application/json
 GET {{host}}/api/incidents?status=Unknown
 Accept: application/json
 
-### # Очікується 200. Політика: лише наявні групи (Low, Medium, High по 1; Critical відсутній).
-# Порядок: лексикографічний за severity (High, Low, Medium).
+### Severity summary: очікується 200; лише наявні групи, порядок лексикографічний
+GET {{host}}/api/incidents/severity-summary
+Accept: application/json
+
