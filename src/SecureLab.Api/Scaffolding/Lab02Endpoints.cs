@@ -4,37 +4,59 @@ using SecureLab.Api.Data.Entities;
 
 namespace SecureLab.Api.Scaffolding;
 
-// ЧАСТИНА 1: POST із валідацією (етап 2). Пошук НАВМИСНО залишено вразливим —
-// він потрібен для vulnerable commit (етап 3). Виправлення пошуку — у частині 2.
+// ЧАСТИНА 2: те саме POST + ВИПРАВЛЕНИЙ пошук (етап 4).
 public static class Lab02Endpoints
 {
     public static void MapLab02Endpoints(this WebApplication app)
     {
-        // ---- УРАЗЛИВИЙ ПОШУК (без змін щодо scaffold; не виправляти до vulnerable commit) ----
+        // ---- БЕЗПЕЧНИЙ ПОШУК: LINQ + ILike (параметри), allowlist для sortBy ----
         app.MapGet("/api/incidents/search", async (string? q, string? sortBy, SecureLabDbContext db, CancellationToken ct) =>
         {
-            var order = sortBy switch
+            var pattern = "%" + EscapeLike(q ?? "") + "%";
+            var found = db.Incidents.AsNoTracking().Where(item =>
+                EF.Functions.ILike(item.Title, pattern, "\\")
+                || EF.Functions.ILike(item.Description, pattern, "\\"));
+
+            // switch = allowlist: клієнт лише обирає одну з гілок, написаних нами
+            IQueryable<Incident>? ordered = sortBy switch
             {
-                null or "" or "createdAtUtc" => "created_at_utc DESC",
-                "severity" => "severity", "status" => "status", _ => sortBy
+                null or "" or "createdAtUtc" => found
+                    .OrderByDescending(item => item.CreatedAtUtc).ThenBy(item => item.Id),
+                "severity" => found
+                    .OrderBy(item => item.Severity == IncidentSeverity.Critical ? 0
+                                   : item.Severity == IncidentSeverity.High ? 1
+                                   : item.Severity == IncidentSeverity.Medium ? 2 : 3)
+                    .ThenBy(item => item.Id),
+                "status" => found
+                    .OrderBy(item => item.Status == IncidentStatus.New ? 0
+                                   : item.Status == IncidentStatus.Triaged ? 1
+                                   : item.Status == IncidentStatus.InProgress ? 2
+                                   : item.Status == IncidentStatus.Resolved ? 3 : 4)
+                    .ThenBy(item => item.Id),
+                _ => null
             };
-            var sql = "SELECT * FROM incidents WHERE title ILIKE '%" + (q ?? "")
-                + "%' OR description ILIKE '%" + (q ?? "") + "%' ORDER BY " + order + " LIMIT 50";
-            var rows = await db.Incidents.FromSqlRaw(sql).AsNoTracking().ToListAsync(ct);
-            return Results.Ok(rows.Select(row => new
-            {
-                row.Id, row.Title, row.Description,
-                Severity = row.Severity.ToString(), Status = row.Status.ToString(), row.CreatedAtUtc
-            }));
+
+            if (ordered is null)
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["sortBy"] = ["Допустимі значення: createdAtUtc, severity, status."]
+                });
+
+            var items = await ordered
+                .Take(50)
+                .Select(item => new IncidentSearchItem(
+                    item.Id, item.Title, item.Description,
+                    item.Severity.ToString(), item.Status.ToString(), item.CreatedAtUtc))
+                .ToListAsync(ct);
+            return Results.Ok(items);
         });
 
-        // ---- POST /api/incidents з серверною валідацією ----
+        // ---- POST /api/incidents (без змін відносно частини 1) ----
         app.MapPost("/api/incidents", async (CreateIncidentRequest request, SecureLabDbContext db, CancellationToken ct) =>
         {
-            var now = DateTimeOffset.UtcNow; // фіксуємо один раз
+            var now = DateTimeOffset.UtcNow;
             var errors = new Dictionary<string, string[]>();
 
-            // 1. required + довжина (довжину міряємо ДО Trim)
             if (string.IsNullOrWhiteSpace(request.Title))
                 errors["title"] = ["Title обов'язковий."];
             else if (request.Title.Length > 160)
@@ -45,35 +67,31 @@ public static class Lab02Endpoints
             else if (request.Description.Length > 4000)
                 errors["description"] = ["Description не довший за 4000 символів."];
 
-            // 2. severity: і TryParse, і IsDefined (рядок "7" проходить TryParse, але не IsDefined)
             var severityIsValid =
                 Enum.TryParse<IncidentSeverity>(request.Severity, ignoreCase: true, out var severity)
                 && Enum.IsDefined(severity);
             if (!severityIsValid)
                 errors["severity"] = ["Допустимі значення: Low, Medium, High, Critical."];
 
-            // 3. дата: обов'язкова, не пізніше now + 5 хв
             if (request.OccurredAtUtc is null)
                 errors["occurredAtUtc"] = ["occurredAtUtc обов'язковий."];
             else if (request.OccurredAtUtc > now.AddMinutes(5))
                 errors["occurredAtUtc"] = ["occurredAtUtc не може бути більше ніж на 5 хвилин у майбутньому."];
 
-            // 4. нормалізація один раз
             var title = request.Title?.Trim() ?? "";
             var description = request.Description?.Trim() ?? "";
 
-            // 5. ➕ ДОБРЕ (T-09): cross-field для High/Critical
+            // ➕ ДОБРЕ (T-09)
             if (severityIsValid
                 && (severity == IncidentSeverity.High || severity == IncidentSeverity.Critical)
                 && !errors.ContainsKey("description")
                 && description.Length < 40)
                 errors["description"] = ["Для High/Critical опис має містити щонайменше 40 символів."];
 
-            // 6. усі помилки контракту — одна відповідь 400, до звернення до БД
             if (errors.Count > 0)
                 return Results.ValidationProblem(errors);
 
-            // 7. ➕ ДОБРЕ (T-03): предметний конфлікт (регістр враховується; Closed не блокує)
+            // ➕ ДОБРЕ (T-03)
             if (await db.Incidents.AnyAsync(
                     item => item.Title == title && item.Status != IncidentStatus.Closed, ct))
                 return Results.Problem(
@@ -81,7 +99,6 @@ public static class Lab02Endpoints
                     title: "Конфлікт",
                     detail: "Інцидент із таким заголовком уже існує.");
 
-            // 8. entity: server-managed поля задає лише сервер
             var incident = new Incident
             {
                 Id = Guid.NewGuid(), OwnerUserId = DbSeeder.AliceId,
@@ -94,7 +111,6 @@ public static class Lab02Endpoints
             db.Incidents.Add(incident);
             await db.SaveChangesAsync(ct);
 
-            // 9. response DTO
             return Results.Created($"/api/incidents/{incident.Id}",
                 new CreatedIncidentResponse(
                     incident.Id, incident.Title, incident.Severity.ToString(),
@@ -102,6 +118,10 @@ public static class Lab02Endpoints
                     incident.CreatedAtUtc, incident.UpdatedAtUtc));
         });
     }
+
+    // Спочатку екрануємо сам '\', потім '%' і '_'; зовнішні '%' додаються ПІСЛЯ цього.
+    private static string EscapeLike(string value) =>
+        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 }
 
 public sealed record CreateIncidentRequest(
@@ -110,3 +130,7 @@ public sealed record CreateIncidentRequest(
 public sealed record CreatedIncidentResponse(
     Guid Id, string Title, string Severity, string Status,
     DateTimeOffset OccurredAtUtc, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc);
+
+public sealed record IncidentSearchItem(
+    Guid Id, string Title, string Description,
+    string Severity, string Status, DateTimeOffset CreatedAtUtc);

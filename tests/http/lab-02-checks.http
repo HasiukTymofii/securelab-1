@@ -104,5 +104,5 @@ GET {{api}}/api/incidents/search?sortBy=status
 ### T-05 невідоме сортування -> 400, errors.sortBy
 GET {{api}}/api/incidents/search?sortBy=price
 
-   ### CP-01 перевірка створеного запису
-   GET {{api}}/api/incidents/76b45b71-24ed-49e0-a067-c877de32496b
+### CP-01 перевірка створеного запису
+GET {{api}}/api/incidents/76b45b71-24ed-49e0-a067-c877de32496b
