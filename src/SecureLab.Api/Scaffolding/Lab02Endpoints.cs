@@ -4,12 +4,10 @@ using SecureLab.Api.Data.Entities;
 
 namespace SecureLab.Api.Scaffolding;
 
-// ЧАСТИНА 2: те саме POST + ВИПРАВЛЕНИЙ пошук (етап 4).
 public static class Lab02Endpoints
 {
     public static void MapLab02Endpoints(this WebApplication app)
     {
-        // ---- БЕЗПЕЧНИЙ ПОШУК: LINQ + ILike (параметри), allowlist для sortBy ----
         app.MapGet("/api/incidents/search", async (string? q, string? sortBy, SecureLabDbContext db, CancellationToken ct) =>
         {
             var pattern = "%" + EscapeLike(q ?? "") + "%";
@@ -17,7 +15,6 @@ public static class Lab02Endpoints
                 EF.Functions.ILike(item.Title, pattern, "\\")
                 || EF.Functions.ILike(item.Description, pattern, "\\"));
 
-            // switch = allowlist: клієнт лише обирає одну з гілок, написаних нами
             IQueryable<Incident>? ordered = sortBy switch
             {
                 null or "" or "createdAtUtc" => found
@@ -51,7 +48,6 @@ public static class Lab02Endpoints
             return Results.Ok(items);
         });
 
-        // ---- POST /api/incidents (без змін відносно частини 1) ----
         app.MapPost("/api/incidents", async (CreateIncidentRequest request, SecureLabDbContext db, CancellationToken ct) =>
         {
             var now = DateTimeOffset.UtcNow;
@@ -81,7 +77,6 @@ public static class Lab02Endpoints
             var title = request.Title?.Trim() ?? "";
             var description = request.Description?.Trim() ?? "";
 
-            // ➕ ДОБРЕ (T-09)
             if (severityIsValid
                 && (severity == IncidentSeverity.High || severity == IncidentSeverity.Critical)
                 && !errors.ContainsKey("description")
@@ -91,7 +86,6 @@ public static class Lab02Endpoints
             if (errors.Count > 0)
                 return Results.ValidationProblem(errors);
 
-            // ➕ ДОБРЕ (T-03)
             if (await db.Incidents.AnyAsync(
                     item => item.Title == title && item.Status != IncidentStatus.Closed, ct))
                 return Results.Problem(
@@ -119,7 +113,6 @@ public static class Lab02Endpoints
         });
     }
 
-    // Спочатку екрануємо сам '\', потім '%' і '_'; зовнішні '%' додаються ПІСЛЯ цього.
     private static string EscapeLike(string value) =>
         value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 }

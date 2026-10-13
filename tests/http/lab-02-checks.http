@@ -1,11 +1,9 @@
 @api = http://localhost:5080
 
-############ ЧАСТИНА 1: контракт створення (етап 2) ############
-
-### USB — перевірка встановлення (очікуємо 200 і 1 запис)
+### USB — перевірка встановлення
 GET {{api}}/api/incidents/search?q=USB
 
-### T-01 коректне створення (повторно: змініть title або зробіть reset)
+### T-01 коректне створення
 POST {{api}}/api/incidents
 Content-Type: application/json
 
@@ -41,29 +39,26 @@ Content-Type: application/json
 
 { "title": "Overpost probe", "description": "Штучний опис.", "severity": "Low", "occurredAtUtc": "2026-10-01T10:00:00Z", "id": "11111111-1111-1111-1111-111111111111", "status": "Closed", "ownerUserId": "11111111-1111-1111-1111-111111111111" }
 
-### ➕ T-09 39 символів, High -> 400, errors.description
+### T-09 39 символів, High -> 400, errors.description
 POST {{api}}/api/incidents
 Content-Type: application/json
 
 { "title": "T09-39", "description": "012345678901234567890123456789012345678", "severity": "High", "occurredAtUtc": "2026-10-01T10:00:00Z" }
 
-### ➕ T-09 40 символів, High -> 201
+### T-09 40 символів, High -> 201
 POST {{api}}/api/incidents
 Content-Type: application/json
 
 { "title": "T09-40", "description": "0123456789012345678901234567890123456789", "severity": "High", "occurredAtUtc": "2026-10-01T10:00:00Z" }
 
-### ➕ T-03 повтор того ж title (надішліть двічі) -> перший 201, другий 409
+### T-03 повтор того ж title (надішліть двічі) -> перший 201, другий 409
 POST {{api}}/api/incidents
 Content-Type: application/json
 
 { "title": "T03-dup", "description": "Штучний опис.", "severity": "Low", "occurredAtUtc": "2026-10-01T10:00:00Z" }
 
-### ➕ T-06 неіснуючий id -> 404, "Інцидент не знайдено"
+### T-06 неіснуючий id -> 404, "Інцидент не знайдено"
 GET {{api}}/api/incidents/99999999-9999-9999-9999-999999999999
-
-
-############ ЧАСТИНА 1: vulnerable state (етап 3; робіть reset перед A-D) ############
 
 ### A. Звичайний пошук -> 200, 1 запис
 GET {{api}}/api/incidents/search?q=USB
@@ -76,9 +71,6 @@ GET {{api}}/api/incidents/search?q=zz-no-match%27%20OR%20TRUE%20--%20
 
 ### D. Легітимний апостроф -> до fix: 500; після fix: 200 + "O'Brien classroom report"
 GET {{api}}/api/incidents/search?q=O%27Brien
-
-
-############ ЧАСТИНА 2: retest після fix ############
 
 ### комп'ютерного (U+0027) -> після fix: 1 запис
 GET {{api}}/api/incidents/search?q=%D0%BA%D0%BE%D0%BC%D0%BF%27%D1%8E%D1%82%D0%B5%D1%80%D0%BD%D0%BE%D0%B3%D0%BE

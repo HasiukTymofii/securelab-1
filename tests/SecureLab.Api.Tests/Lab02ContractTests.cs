@@ -7,7 +7,6 @@ using SecureLab.Api.Data;
 
 namespace SecureLab.Api.Tests;
 
-// ЛР 02, рівень «Добре»: автоматичні T-02 і T-03.
 public sealed class Lab02ContractTests(SecureLabApiFactory factory)
     : IClassFixture<SecureLabApiFactory>
 {
