@@ -65,20 +65,31 @@ public static class Lab03Identity
             if (!role.Succeeded) throw new InvalidOperationException("Default role assignment failed.");
             return Results.Created("/api/me", new RegisterResponse(user.Id, user.UserName!, user.DisplayName));
         });
-        app.MapPost("/api/auth/login", async (LoginInput input, SignInManager<ApplicationUser> signIn) =>
+
+        app.MapPost("/api/auth/login", async (LoginInput input, SignInManager<ApplicationUser> signIn,
+            HttpContext httpContext, ILoggerFactory loggerFactory) =>
         {
+            var logger = loggerFactory.CreateLogger("AuthEvents");
             if (string.IsNullOrWhiteSpace(input.UserName) || string.IsNullOrEmpty(input.Password))
+            {
+                logger.LogInformation("Auth event {EventType}: result {Result}, time {TimeUtc}, trace {TraceId}",
+                    "login", "failure", DateTimeOffset.UtcNow, httpContext.TraceIdentifier);
                 return Results.Unauthorized();
+            }
             var result = await signIn.PasswordSignInAsync(input.UserName, input.Password, false, false);
+            logger.LogInformation("Auth event {EventType}: result {Result}, time {TimeUtc}, trace {TraceId}",
+                "login", result.Succeeded ? "success" : "failure", DateTimeOffset.UtcNow, httpContext.TraceIdentifier);
             return result.Succeeded ? Results.NoContent() : Results.Unauthorized();
-        });
+        }).RequireRateLimiting("login");
+
         app.MapPost("/api/auth/logout", async (SignInManager<ApplicationUser> signIn) =>
         {
             await signIn.SignOutAsync();
             return Results.NoContent();
         });
+
         app.MapGet("/api/me", GetCurrentUser).RequireAuthorization();
-        // Приклад лише mechanics: не повертає identity і не реалізує оцінювану operation.
+        
         app.MapGet("/api/auth/session-check", () => Results.NoContent()).RequireAuthorization();
     }
 
