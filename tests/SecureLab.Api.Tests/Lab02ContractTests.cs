@@ -10,7 +10,9 @@ namespace SecureLab.Api.Tests;
 public sealed class Lab02ContractTests(SecureLabApiFactory factory)
     : IClassFixture<SecureLabApiFactory>
 {
-    private readonly HttpClient _client = factory.CreateClient();
+    private static string Pwd =>
+        Environment.GetEnvironmentVariable("SeedUsers__Password")
+        ?? throw new InvalidOperationException("Set local SeedUsers__Password outside Git.");
 
     [Fact]
     public async Task Post_WithSeverity7_Returns400WithSeverityKey()
@@ -18,7 +20,8 @@ public sealed class Lab02ContractTests(SecureLabApiFactory factory)
         var title = $"T02-{Guid.NewGuid():N}";
         try
         {
-            using var response = await _client.PostAsJsonAsync("/api/incidents", new
+            using var client = await factory.LoginAsync("alice", Pwd);
+            using var response = await client.PostAsJsonAsync("/api/incidents", new
             {
                 title,
                 description = "Штучний опис для перевірки.",
@@ -56,10 +59,11 @@ public sealed class Lab02ContractTests(SecureLabApiFactory factory)
 
         try
         {
-            using var first = await _client.PostAsJsonAsync("/api/incidents", body);
+            using var client = await factory.LoginAsync("alice", Pwd);
+            using var first = await client.PostAsJsonAsync("/api/incidents", body);
             Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
-            using var second = await _client.PostAsJsonAsync("/api/incidents", body);
+            using var second = await client.PostAsJsonAsync("/api/incidents", body);
             Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
             Assert.Equal("application/problem+json",
                 second.Content.Headers.ContentType?.MediaType);
