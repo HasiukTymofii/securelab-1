@@ -18,6 +18,9 @@ public static class DbSeeder
     public static readonly Guid AliceIncidentId = Guid.Parse("20000000-0000-0000-0000-000000000001");
     public static readonly Guid BobIncidentId = Guid.Parse("20000000-0000-0000-0000-000000000002");
     public static readonly Guid SafeTextIncidentId = Guid.Parse("20000000-0000-0000-0000-000000000003");
+     public static readonly Guid Comment1Id = Guid.Parse("30000000-0000-0000-0000-000000000001");
+    public static readonly Guid Comment2Id = Guid.Parse("30000000-0000-0000-0000-000000000002");
+    public static readonly Guid InternalCommentId = Guid.Parse("30000000-0000-0000-0000-000000000003");
 
     private static readonly Guid ReporterRoleId =
         Guid.Parse("50000000-0000-0000-0000-000000000001");
@@ -97,10 +100,10 @@ public static class DbSeeder
         };
 
         dbContext.Incidents.AddRange(aliceIncident, bobIncident, safeTextIncident);
-        dbContext.IncidentComments.AddRange(
+                dbContext.IncidentComments.AddRange(
             new IncidentComment
             {
-                Id = Guid.Parse("30000000-0000-0000-0000-000000000001"),
+                Id = Comment1Id,
                 Incident = aliceIncident,
                 Author = morgan,
                 Text = "Заголовки листа передано аналітику.",
@@ -109,12 +112,21 @@ public static class DbSeeder
             },
             new IncidentComment
             {
-                Id = Guid.Parse("30000000-0000-0000-0000-000000000002"),
+                Id = Comment2Id,
                 Incident = bobIncident,
                 Author = morgan,
                 Text = "Розпочато перевірку журналу автентифікації.",
                 IsInternal = false,
                 CreatedAtUtc = new DateTimeOffset(2026, 8, 2, 14, 40, 0, TimeSpan.Zero)
+            },
+            new IncidentComment
+            {
+                Id = InternalCommentId,
+                Incident = aliceIncident,
+                Author = morgan,
+                Text = "Внутрішній коментар аналітика щодо перевірки загроз.",
+                IsInternal = true,
+                CreatedAtUtc = new DateTimeOffset(2026, 8, 1, 9, 45, 0, TimeSpan.Zero)
             });
         dbContext.IncidentStatusHistory.Add(
             new IncidentStatusHistory
