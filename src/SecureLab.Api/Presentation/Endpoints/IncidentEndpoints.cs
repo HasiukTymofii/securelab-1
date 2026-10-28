@@ -1,6 +1,8 @@
 using SecureLab.Api.Application.Incidents;
 using SecureLab.Api.Data.Entities;
 using SecureLab.Api.Presentation.Contracts;
+using Microsoft.EntityFrameworkCore;
+using SecureLab.Api.Data;
 
 namespace SecureLab.Api.Presentation.Endpoints;
 
@@ -10,6 +12,10 @@ public static class IncidentEndpoints
     {
         var group = endpoints.MapGroup("/api/incidents")
             .WithTags("Incidents");
+        group.MapPut("/{id:guid}", UpdateAsync);
+        group.MapDelete("/{id:guid}", DeleteAsync);
+        group.MapPost("/{id:guid}/triage", TriageAsync);
+        endpoints.MapGet("/api/incident-comments/{id:guid}", GetCommentAsync);
 
         group.MapGet("/", GetListAsync)
             .WithName("GetIncidents")
@@ -84,5 +90,51 @@ private static async Task<IResult> GetSeveritySummaryAsync(
         var traceId = System.Diagnostics.Activity.Current?.Id ?? ctx.TraceIdentifier;
         var data = await queries.GetSeveritySummaryAsync(filter, traceId, ct);
         return Results.Ok(data);
+    }
+        private static async Task<IResult> UpdateAsync(
+        Guid id, UpdateIncidentRequest request, SecureLabDbContext dbContext, CancellationToken ct)
+    {
+        var incident = await dbContext.Incidents.SingleOrDefaultAsync(i => i.Id == id, ct);
+        if (incident is null) return Results.NotFound();
+        incident.Title = request.Title;
+        incident.Description = request.Description;
+        await dbContext.SaveChangesAsync(ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> DeleteAsync(
+        Guid id, SecureLabDbContext dbContext, CancellationToken ct)
+    {
+        var incident = await dbContext.Incidents
+            .Include(i => i.Comments).Include(i => i.StatusHistory)
+            .SingleOrDefaultAsync(i => i.Id == id, ct);
+        if (incident is null) return Results.NotFound();
+        dbContext.IncidentComments.RemoveRange(incident.Comments);
+        dbContext.IncidentStatusHistory.RemoveRange(incident.StatusHistory);
+        dbContext.Incidents.Remove(incident);
+        await dbContext.SaveChangesAsync(ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> TriageAsync(
+        Guid id, SecureLabDbContext dbContext, CancellationToken ct)
+    {
+        var incident = await dbContext.Incidents.SingleOrDefaultAsync(i => i.Id == id, ct);
+        if (incident is null) return Results.NotFound();
+        incident.Status = IncidentStatus.Triaged;
+        await dbContext.SaveChangesAsync(ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> GetCommentAsync(
+        Guid id, SecureLabDbContext dbContext, CancellationToken ct)
+    {
+        var comment = await dbContext.IncidentComments.AsNoTracking()
+            .Include(c => c.Author)
+            .SingleOrDefaultAsync(c => c.Id == id, ct);
+        return comment is null
+            ? Results.NotFound()
+            : Results.Ok(new IncidentCommentResponse(
+                comment.Id, comment.Author.DisplayName, comment.Text, comment.CreatedAtUtc));
     }
 }
