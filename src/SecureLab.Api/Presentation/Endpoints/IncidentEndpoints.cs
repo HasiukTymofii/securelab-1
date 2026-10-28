@@ -1,8 +1,12 @@
+using System.Diagnostics;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 using SecureLab.Api.Application.Incidents;
+using SecureLab.Api.Data;
 using SecureLab.Api.Data.Entities;
 using SecureLab.Api.Presentation.Contracts;
-using Microsoft.EntityFrameworkCore;
-using SecureLab.Api.Data;
 
 namespace SecureLab.Api.Presentation.Endpoints;
 
@@ -11,11 +15,8 @@ public static class IncidentEndpoints
     public static IEndpointRouteBuilder MapIncidentEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/incidents")
-            .WithTags("Incidents");
-        group.MapPut("/{id:guid}", UpdateAsync);
-        group.MapDelete("/{id:guid}", DeleteAsync);
-        group.MapPost("/{id:guid}/triage", TriageAsync);
-        endpoints.MapGet("/api/incident-comments/{id:guid}", GetCommentAsync);
+            .WithTags("Incidents")
+            .RequireAuthorization();
 
         group.MapGet("/", GetListAsync)
             .WithName("GetIncidents")
@@ -27,16 +28,49 @@ public static class IncidentEndpoints
             .Produces<IncidentDetailsResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-       group.MapGet("/severity-summary", GetSeveritySummaryAsync)
+        group.MapGet("/severity-summary", GetSeveritySummaryAsync)
             .WithName("GetIncidentSeveritySummary")
             .Produces<IReadOnlyList<IncidentSeveritySummaryResponse>>(StatusCodes.Status200OK)
             .ProducesValidationProblem(StatusCodes.Status400BadRequest);
 
+        group.MapPut("/{id:guid}", UpdateAsync)
+            .WithName("UpdateIncident")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapDelete("/{id:guid}", DeleteAsync)
+            .WithName("DeleteIncident")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{id:guid}/triage", TriageAsync)
+            .WithName("TriageIncident")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        endpoints.MapGet("/api/incident-comments/{id:guid}", GetCommentAsync)
+            .WithName("GetIncidentComment")
+            .WithTags("Incidents")
+            .RequireAuthorization()
+            .Produces<IncidentCommentResponse>()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         return endpoints;
     }
 
+  
+    private static IResult IncidentNotFound() => Results.Problem(
+        title: "Інцидент не знайдено",
+        statusCode: StatusCodes.Status404NotFound);
+
+    private static async Task<bool> IsAllowedAsync(
+        IAuthorizationService authorizationService,
+        HttpContext httpContext,
+        Incident incident,
+        OperationAuthorizationRequirement operation)
+        => (await authorizationService.AuthorizeAsync(httpContext.User, incident, operation)).Succeeded;
+
     private static async Task<IResult> GetListAsync(
         string? status,
+        HttpContext httpContext,
         IncidentQueries queries,
         CancellationToken cancellationToken)
     {
@@ -55,24 +89,188 @@ public static class IncidentEndpoints
             parsedStatus = candidate;
         }
 
-        return Results.Ok(await queries.GetListAsync(parsedStatus, cancellationToken));
+        if (!Guid.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var ownerId))
+        {
+            return Results.Challenge();
+        }
+
+        var isAnalyst = httpContext.User.IsInRole(DbSeeder.AnalystRole);
+        return Results.Ok(await queries.GetListAsync(parsedStatus, ownerId, isAnalyst, cancellationToken));
     }
 
     private static async Task<IResult> GetDetailsAsync(
         Guid id,
+        HttpContext httpContext,
+        IAuthorizationService authorizationService,
+        SecureLabDbContext dbContext,
         IncidentQueries queries,
         CancellationToken cancellationToken)
     {
-        var incident = await queries.GetDetailsAsync(id, cancellationToken);
-        return incident is null
-            ? Results.Problem(
-                title: "Інцидент не знайдено",
-                detail: $"Інцидент '{id}' не існує.",
-                statusCode: StatusCodes.Status404NotFound)
-            : Results.Ok(incident);
+        var incident = await dbContext.Incidents.AsNoTracking()
+            .SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
+        if (incident is null
+            || !await IsAllowedAsync(authorizationService, httpContext, incident, IncidentOperations.Read))
+        {
+            return IncidentNotFound();
+        }
+
+        var includeInternal = httpContext.User.IsInRole(DbSeeder.AnalystRole);
+        var details = await queries.GetDetailsAsync(id, includeInternal, cancellationToken);
+        return details is null ? IncidentNotFound() : Results.Ok(details);
     }
 
-private static async Task<IResult> GetSeveritySummaryAsync(
+    private static async Task<IResult> UpdateAsync(
+        Guid id,
+        UpdateIncidentRequest request,
+        HttpContext httpContext,
+        IAuthorizationService authorizationService,
+        SecureLabDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+      
+        var incident = await dbContext.Incidents.SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
+        if (incident is null
+            || !await IsAllowedAsync(authorizationService, httpContext, incident, IncidentOperations.Read))
+        {
+            return IncidentNotFound();
+        }
+
+        if (!await IsAllowedAsync(authorizationService, httpContext, incident, IncidentOperations.Update))
+        {
+            return Results.Forbid();
+        }
+
+        var errors = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
+            errors["title"] = ["Title: 1–200 символів."];
+        if (string.IsNullOrWhiteSpace(request.Description) || request.Description.Length > 4000)
+            errors["description"] = ["Description: 1–4000 символів."];
+        if (errors.Count > 0)
+            return Results.ValidationProblem(errors);
+
+        incident.Title = request.Title.Trim();
+        incident.Description = request.Description.Trim();
+        incident.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> DeleteAsync(
+        Guid id,
+        HttpContext httpContext,
+        IAuthorizationService authorizationService,
+        SecureLabDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var incident = await dbContext.Incidents
+            .Include(i => i.Comments)
+            .Include(i => i.StatusHistory)
+            .SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
+        if (incident is null
+            || !await IsAllowedAsync(authorizationService, httpContext, incident, IncidentOperations.Read))
+        {
+            return IncidentNotFound();
+        }
+
+        if (!await IsAllowedAsync(authorizationService, httpContext, incident, IncidentOperations.Delete))
+        {
+            return Results.Forbid();
+        }
+
+        dbContext.IncidentComments.RemoveRange(incident.Comments);
+        dbContext.IncidentStatusHistory.RemoveRange(incident.StatusHistory);
+        dbContext.Incidents.Remove(incident);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> TriageAsync(
+        Guid id,
+        HttpContext httpContext,
+        IAuthorizationService authorizationService,
+        SecureLabDbContext dbContext,
+        ILogger<Program> logger,
+        CancellationToken cancellationToken)
+    {
+        var incident = await dbContext.Incidents.SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
+        if (incident is null
+            || !await IsAllowedAsync(authorizationService, httpContext, incident, IncidentOperations.Read))
+        {
+            return IncidentNotFound();
+        }
+
+        if (!await IsAllowedAsync(authorizationService, httpContext, incident, IncidentOperations.Triage))
+        {
+            // Audit пишемо тут: декларативна policy на маршруті не виконала б код endpoint.
+            logger.LogWarning(
+                "authorization.denied subject={SubjectId} action={Action} resource={ResourceId} "
+                + "result={Result} occurredAtUtc={OccurredAtUtc:O} traceId={TraceId}",
+                httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier),
+                "incident.triage",
+                incident.Id,
+                "denied",
+                DateTimeOffset.UtcNow,
+                Activity.Current?.Id ?? httpContext.TraceIdentifier);
+            return Results.Forbid();
+        }
+
+        if (incident.Status != IncidentStatus.New)
+        {
+            return Results.Problem(title: "Перехід неможливий", statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (!Guid.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+        {
+            return Results.Challenge();
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        incident.Status = IncidentStatus.Triaged; // наступний статус визначає сервер
+        incident.UpdatedAtUtc = now;
+        dbContext.IncidentStatusHistory.Add(new IncidentStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            IncidentId = incident.Id,
+            ChangedByUserId = userId,
+            OldStatus = IncidentStatus.New,
+            NewStatus = IncidentStatus.Triaged,
+            Note = "Triage",
+            CreatedAtUtc = now
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> GetCommentAsync(
+        Guid id,
+        HttpContext httpContext,
+        IAuthorizationService authorizationService,
+        SecureLabDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var comment = await dbContext.IncidentComments.AsNoTracking()
+            .Include(c => c.Incident)
+            .Include(c => c.Author)
+            .SingleOrDefaultAsync(c => c.Id == id, cancellationToken);
+        if (comment is null)
+        {
+            return IncidentNotFound();
+        }
+
+     
+        var canReadParent = await IsAllowedAsync(
+            authorizationService, httpContext, comment.Incident, IncidentOperations.Read);
+        var isAnalyst = httpContext.User.IsInRole(DbSeeder.AnalystRole);
+        if (!canReadParent || (comment.IsInternal && !isAnalyst))
+        {
+            return IncidentNotFound();
+        }
+
+        return Results.Ok(new IncidentCommentResponse(
+            comment.Id, comment.Author.DisplayName, comment.Text, comment.CreatedAtUtc));
+    }
+
+    private static async Task<IResult> GetSeveritySummaryAsync(
         string? status,
         IncidentQueries queries,
         HttpContext ctx,
@@ -83,58 +281,11 @@ private static async Task<IResult> GetSeveritySummaryAsync(
         {
             if (!Enum.TryParse<IncidentStatus>(status, true, out var parsed) || !Enum.IsDefined(parsed))
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["status"] = [$"Invalid status: '{status}'"] });
-
             filter = parsed;
         }
 
-        var traceId = System.Diagnostics.Activity.Current?.Id ?? ctx.TraceIdentifier;
+        var traceId = Activity.Current?.Id ?? ctx.TraceIdentifier;
         var data = await queries.GetSeveritySummaryAsync(filter, traceId, ct);
         return Results.Ok(data);
-    }
-        private static async Task<IResult> UpdateAsync(
-        Guid id, UpdateIncidentRequest request, SecureLabDbContext dbContext, CancellationToken ct)
-    {
-        var incident = await dbContext.Incidents.SingleOrDefaultAsync(i => i.Id == id, ct);
-        if (incident is null) return Results.NotFound();
-        incident.Title = request.Title;
-        incident.Description = request.Description;
-        await dbContext.SaveChangesAsync(ct);
-        return Results.NoContent();
-    }
-
-    private static async Task<IResult> DeleteAsync(
-        Guid id, SecureLabDbContext dbContext, CancellationToken ct)
-    {
-        var incident = await dbContext.Incidents
-            .Include(i => i.Comments).Include(i => i.StatusHistory)
-            .SingleOrDefaultAsync(i => i.Id == id, ct);
-        if (incident is null) return Results.NotFound();
-        dbContext.IncidentComments.RemoveRange(incident.Comments);
-        dbContext.IncidentStatusHistory.RemoveRange(incident.StatusHistory);
-        dbContext.Incidents.Remove(incident);
-        await dbContext.SaveChangesAsync(ct);
-        return Results.NoContent();
-    }
-
-    private static async Task<IResult> TriageAsync(
-        Guid id, SecureLabDbContext dbContext, CancellationToken ct)
-    {
-        var incident = await dbContext.Incidents.SingleOrDefaultAsync(i => i.Id == id, ct);
-        if (incident is null) return Results.NotFound();
-        incident.Status = IncidentStatus.Triaged;
-        await dbContext.SaveChangesAsync(ct);
-        return Results.NoContent();
-    }
-
-    private static async Task<IResult> GetCommentAsync(
-        Guid id, SecureLabDbContext dbContext, CancellationToken ct)
-    {
-        var comment = await dbContext.IncidentComments.AsNoTracking()
-            .Include(c => c.Author)
-            .SingleOrDefaultAsync(c => c.Id == id, ct);
-        return comment is null
-            ? Results.NotFound()
-            : Results.Ok(new IncidentCommentResponse(
-                comment.Id, comment.Author.DisplayName, comment.Text, comment.CreatedAtUtc));
     }
 }
