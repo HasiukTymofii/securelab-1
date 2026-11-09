@@ -18,7 +18,7 @@ public static class DbSeeder
     public static readonly Guid AliceIncidentId = Guid.Parse("20000000-0000-0000-0000-000000000001");
     public static readonly Guid BobIncidentId = Guid.Parse("20000000-0000-0000-0000-000000000002");
     public static readonly Guid SafeTextIncidentId = Guid.Parse("20000000-0000-0000-0000-000000000003");
-     public static readonly Guid Comment1Id = Guid.Parse("30000000-0000-0000-0000-000000000001");
+    public static readonly Guid Comment1Id = Guid.Parse("30000000-0000-0000-0000-000000000001");
     public static readonly Guid Comment2Id = Guid.Parse("30000000-0000-0000-0000-000000000002");
     public static readonly Guid InternalCommentId = Guid.Parse("30000000-0000-0000-0000-000000000003");
 
@@ -100,7 +100,13 @@ public static class DbSeeder
         };
 
         dbContext.Incidents.AddRange(aliceIncident, bobIncident, safeTextIncident);
-                dbContext.IncidentComments.AddRange(
+
+        const string Lab05Marker =
+            "<img src=x onerror=\""
+            + "document.querySelector('#lab05-marker-target')"
+            + ".setAttribute('data-lab05-marker', 'executed')\">";
+
+        dbContext.IncidentComments.AddRange(
             new IncidentComment
             {
                 Id = Comment1Id,
@@ -127,7 +133,17 @@ public static class DbSeeder
                 Text = "Внутрішній коментар аналітика щодо перевірки загроз.",
                 IsInternal = true,
                 CreatedAtUtc = new DateTimeOffset(2026, 8, 1, 9, 45, 0, TimeSpan.Zero)
+            },
+            new IncidentComment
+            {
+                Id = Guid.Parse("30000000-0000-0000-0000-000000000005"),
+                Incident = aliceIncident,
+                Author = morgan,
+                Text = Lab05Marker,
+                IsInternal = false,
+                CreatedAtUtc = new DateTimeOffset(2026, 8, 1, 9, 35, 0, TimeSpan.Zero)
             });
+
         dbContext.IncidentStatusHistory.Add(
             new IncidentStatusHistory
             {

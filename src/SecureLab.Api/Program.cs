@@ -40,6 +40,21 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
+// Крок 4.3: Реєстрація CORS-політики для навчального зонда 4173
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("Lab05BrowserProbe", policy =>
+        {
+            policy.WithOrigins("http://localhost:4173")
+                  .WithMethods("GET")
+                  .WithHeaders("X-Lab-Cors-Probe")
+                  .AllowCredentials();
+        });
+    });
+}
+
 var app = builder.Build();
 
 var resetRequested = args.Contains("--reset-database", StringComparer.Ordinal);
@@ -53,17 +68,22 @@ if (resetRequested)
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
+// Крок 5: Захисні HTTP-заголовки та сувора Content Security Policy (режим enforcement)
 app.Use(async (context, next) =>
 {
     context.Response.Headers.XContentTypeOptions = "nosniff";
     context.Response.Headers.Append("Referrer-Policy", "no-referrer");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'");
     await next(context);
 });
 
+// Крок 4.3: Маршрутизація та CORS перед викликами Authentication та Authorization
+app.UseRouting();
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference();
+    app.UseCors("Lab05BrowserProbe");
 }
 
 app.UseAuthentication();
@@ -72,6 +92,12 @@ app.UseRateLimiter();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
 
 app.MapGet("/health", async (SecureLabDbContext dbContext, CancellationToken cancellationToken) =>
     await dbContext.Database.CanConnectAsync(cancellationToken)
