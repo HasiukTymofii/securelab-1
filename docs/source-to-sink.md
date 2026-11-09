@@ -1,0 +1,6 @@
+# Карта Source-to-Sink (ЛР 5)
+
+| Поле | Source (Джерело) | Request | Server Transform | Storage | Response JSON | Client Transform | Sink (Приймач) | Контекст | Вердикт |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Incident.Description** | Поле вводу `#incident-description` | `POST /api/incidents` (поле `description`) | DTO binding, FluentValidation | PostgreSQL колонка `Description` | `GET /api/incidents/{id}` -> `description` | `loadIncident()` у `browser-lab.js` | Раніше: `innerHTML`<br>Виправлено: `createSafeTextElement` (`textContent`) | Текстовий вузол DOM | Безпечно (Safe text node) |
+| **IncidentComment.Text** | Seed-дані / форма створення коментаря | Внутрішній об'єкт `IncidentComment` | ORM EF Core Entity mapping | PostgreSQL колонка `Text` | `GET /api/incidents/{id}` -> `comments[].text` | Цикл ітерації коментарів у `browser-lab.js` | Раніше: `innerHTML`<br>Виправлено: `createSafeTextElement` (`textContent`) | Текстовий вузол DOM | Безпечно (Safe text node) |
