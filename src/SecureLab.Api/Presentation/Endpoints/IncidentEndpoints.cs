@@ -7,6 +7,7 @@ using SecureLab.Api.Application.Incidents;
 using SecureLab.Api.Data;
 using SecureLab.Api.Data.Entities;
 using SecureLab.Api.Presentation.Contracts;
+using SecureLab.Api.Security;
 
 namespace SecureLab.Api.Presentation.Endpoints;
 
@@ -35,16 +36,19 @@ public static class IncidentEndpoints
 
         group.MapPut("/{id:guid}", UpdateAsync)
             .WithName("UpdateIncident")
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .AddEndpointFilter<AntiforgeryFilter>();
 
         group.MapDelete("/{id:guid}", DeleteAsync)
             .WithName("DeleteIncident")
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .AddEndpointFilter<AntiforgeryFilter>();
 
         group.MapPost("/{id:guid}/triage", TriageAsync)
             .WithName("TriageIncident")
             .ProducesProblem(StatusCodes.Status403Forbidden)
-            .ProducesProblem(StatusCodes.Status409Conflict);
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .AddEndpointFilter<AntiforgeryFilter>();
 
         endpoints.MapGet("/api/incident-comments/{id:guid}", GetCommentAsync)
             .WithName("GetIncidentComment")
@@ -56,7 +60,6 @@ public static class IncidentEndpoints
         return endpoints;
     }
 
-  
     private static IResult IncidentNotFound() => Results.Problem(
         title: "Інцидент не знайдено",
         statusCode: StatusCodes.Status404NotFound);
@@ -127,7 +130,6 @@ public static class IncidentEndpoints
         SecureLabDbContext dbContext,
         CancellationToken cancellationToken)
     {
-      
         var incident = await dbContext.Incidents.SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
         if (incident is null
             || !await IsAllowedAsync(authorizationService, httpContext, incident, IncidentOperations.Read))
@@ -257,7 +259,6 @@ public static class IncidentEndpoints
             return IncidentNotFound();
         }
 
-     
         var canReadParent = await IsAllowedAsync(
             authorizationService, httpContext, comment.Incident, IncidentOperations.Read);
         var isAnalyst = httpContext.User.IsInRole(DbSeeder.AnalystRole);

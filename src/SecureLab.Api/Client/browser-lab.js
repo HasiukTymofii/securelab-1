@@ -33,7 +33,7 @@ async function load() {
 document.querySelector("#load").addEventListener("click", load);
 document.querySelector("#edit").addEventListener("submit", async event => {
   event.preventDefault();
-  const response = await fetch("/api/incidents", {
+  const response = await window.DemoCsrf.mutate("/api/incidents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

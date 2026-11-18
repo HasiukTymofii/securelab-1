@@ -26,7 +26,6 @@ internal static class AuthTestSupport
     public static HttpClient Anonymous<T>(WebApplicationFactory<T> host) where T : class =>
         host.CreateClient(HttpsOptions());
 
-    
     public static async Task<HttpClient> SignInAsync<T>(WebApplicationFactory<T> host, string userName)
         where T : class
     {
@@ -39,6 +38,7 @@ internal static class AuthTestSupport
             throw new InvalidOperationException(
                 $"Test login failed with status {(int)response.StatusCode} (credentials omitted).");
         }
+        await client.UseAntiforgeryTokenAsync();
         return client;
     }
 
@@ -86,8 +86,6 @@ internal static class AuthTestSupport
 public sealed class AuthSecurityTests(SecureLabApiFactory factory)
     : IClassFixture<SecureLabApiFactory>
 {
-    
-
     private static (string UserName, string Email) NewIdentity()
     {
         var userName = "reg" + Guid.NewGuid().ToString("N")[..8];
@@ -113,7 +111,7 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
         var body = await response.Content.ReadAsStringAsync();
-   
+
         Assert.False(body.Contains(AuthTestSupport.StudyPassword, StringComparison.Ordinal));
 
         using var doc = JsonDocument.Parse(body);
@@ -137,7 +135,10 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
 
         using var response = await anonymous.PostAsJsonAsync("/api/auth/register", new
         {
-            userName, email, displayName = "Тест Реєстрації", password = "short"
+            userName,
+            email,
+            displayName = "Тест Реєстрації",
+            password = "short"
         });
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
@@ -184,9 +185,12 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
 
         using var response = await anonymous.PostAsJsonAsync("/api/auth/register", new
         {
-            userName, email, displayName = "Тест Реєстрації",
+            userName,
+            email,
+            displayName = "Тест Реєстрації",
             password = AuthTestSupport.StudyPassword,
-            role = "Administrator", id = forgedId
+            role = "Administrator",
+            id = forgedId
         });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
@@ -202,8 +206,6 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
         Assert.Equal(new[] { DbSeeder.ReporterRole }, roles.ToArray());
     }
 
-  
-
     [Fact]
     public async Task A01_AnonymousCreate_Returns401_NotRedirect_AndNothingCreated()
     {
@@ -216,7 +218,7 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
         Assert.Null(response.Headers.Location);
         Assert.Empty(response.Headers.WwwAuthenticate);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-        
+
         Assert.False(await AuthTestSupport.IncidentExistsAsync(factory, title));
     }
 
@@ -228,8 +230,6 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Null(response.Headers.Location);
     }
-
-    
 
     [Fact]
     public async Task A02_LoginThenMe_ReturnsCurrentPrincipal_WithSafeFieldsOnly()
@@ -248,8 +248,6 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
             .OrderBy(n => n, StringComparer.Ordinal).ToArray();
         Assert.Equal(new[] { "displayName", "id", "userName" }, names);
     }
-
-    
 
     [Fact]
     public async Task A03_MeWithForeignDemoHeader_StillReturnsCookieUser()
@@ -275,8 +273,6 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
         using var response = await anonymous.SendAsync(request);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
-
-   
 
     [Fact]
     public async Task A04_CreateWithoutOwner_UsesPrincipalAsOwner()
@@ -311,7 +307,6 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
         Assert.Equal(DbSeeder.BobId, owner);
     }
 
-    
     [Fact]
     public async Task A06_Logout_ThenSameClientGets401()
     {
@@ -332,8 +327,6 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
         Assert.Equal(HttpStatusCode.Unauthorized, afterMe.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, afterCheck.StatusCode);
     }
-
-   
 
     private static string StableProblemFields(string body)
     {
@@ -376,8 +369,6 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
             StableProblemFields(await wrong.Content.ReadAsStringAsync()));
     }
 
-   
-
     [Fact]
     public async Task CookieFlags_LoginOverHttps_SetsHttpOnlySecureLaxSessionCookie()
     {
@@ -394,19 +385,17 @@ public sealed class AuthSecurityTests(SecureLabApiFactory factory)
         // Лише кількість: значення cookie не потрапить у failure.
         Assert.True(matching.Length == 1);
 
-      
         var attributes = matching[0].Split(';').Skip(1)
             .Select(part => part.Trim().ToLowerInvariant()).ToArray();
         Assert.Contains("httponly", attributes);
         Assert.Contains("secure", attributes);
         Assert.Contains("samesite=lax", attributes);
         Assert.Contains("path=/", attributes);
-       
+
         Assert.DoesNotContain(attributes,
             a => a.StartsWith("expires=", StringComparison.Ordinal) || a.StartsWith("max-age=", StringComparison.Ordinal));
     }
 }
-
 
 public sealed class LoginRateLimitTests(SecureLabApiFactory factory)
     : IClassFixture<SecureLabApiFactory>
@@ -429,12 +418,10 @@ public sealed class LoginRateLimitTests(SecureLabApiFactory factory)
             if (response.StatusCode == HttpStatusCode.TooManyRequests) break;
         }
 
-   
         Assert.Equal(HttpStatusCode.TooManyRequests, statuses[^1]);
         Assert.True(statuses.Count > 1);
         Assert.All(statuses.SkipLast(1), status => Assert.Equal(HttpStatusCode.Unauthorized, status));
 
-      
         await Task.Delay(LoginWindow + TimeSpan.FromSeconds(2));
         using var recovered = await client.PostAsJsonAsync(
             "/api/auth/login", new { userName = "rate-limit-probe", password = "Wrong-Pass-1!" });

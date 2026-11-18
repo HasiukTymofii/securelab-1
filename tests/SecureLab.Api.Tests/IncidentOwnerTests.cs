@@ -40,6 +40,7 @@ public sealed class IncidentOwnerTests(SecureLabApiFactory factory)
         try
         {
             using var bob = await factory.LoginAsync("bob", Pwd);
+            await bob.UseAntiforgeryTokenAsync();
             using var response = await bob.PostAsJsonAsync("/api/incidents", new
             {
                 title,
@@ -67,6 +68,7 @@ public sealed class IncidentOwnerTests(SecureLabApiFactory factory)
         try
         {
             using var bob = await factory.LoginAsync("bob", Pwd);
+            await bob.UseAntiforgeryTokenAsync();
             using var response = await bob.PostAsJsonAsync("/api/incidents", new
             {
                 title,

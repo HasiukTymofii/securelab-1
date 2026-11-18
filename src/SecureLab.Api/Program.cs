@@ -1,11 +1,13 @@
+using System.Security.Claims;
 using System.Threading.RateLimiting;
-using SecureLab.Api.Scaffolding;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using SecureLab.Api.Application.Incidents;
 using SecureLab.Api.Data;
 using SecureLab.Api.Presentation.Endpoints;
-using Microsoft.AspNetCore.Authorization;
+using SecureLab.Api.Scaffolding;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -26,6 +28,13 @@ builder.Services.AddSingleton<IAuthorizationHandler, IncidentAuthorizationHandle
 
 builder.AddLab03Identity();
 
+// Крок 2.1: Реєстрація сервісу antiforgery та імені заголовка для request token
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.Name = "SecureLab.Antiforgery";
+});
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -35,6 +44,19 @@ builder.Services.AddRateLimiter(options =>
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 10,
+                Window = TimeSpan.FromSeconds(10),
+                QueueLimit = 0
+            }));
+
+    // Крок 3: Обмеження частоти запитів для пошуку інцидентів (ізоляція за користувачем)
+    options.AddPolicy("search", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                          ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                          ?? "anonymous",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
                 Window = TimeSpan.FromSeconds(10),
                 QueueLimit = 0
             }));
@@ -65,18 +87,23 @@ if (resetRequested)
     return;
 }
 
-app.UseExceptionHandler();
-app.UseStatusCodePages();
-
-// Крок 5: Захисні HTTP-заголовки та сувора Content Security Policy (режим enforcement)
+// F-02: захисні заголовки ставляться через OnStarting і стоять ПЕРЕД exception handler,
+// тому присутні також у відповідях 500 (handler очищає заголовки, але OnStarting спрацьовує пізніше).
 app.Use(async (context, next) =>
 {
-    context.Response.Headers.XContentTypeOptions = "nosniff";
-    context.Response.Headers.Append("Referrer-Policy", "no-referrer");
-    context.Response.Headers.Append("X-Frame-Options", "DENY");
-    context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'");
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers["Referrer-Policy"] = "no-referrer";
+        context.Response.Headers["X-Frame-Options"] = "DENY";
+        context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'";
+        return Task.CompletedTask;
+    });
     await next(context);
 });
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
 
 // Крок 4.3: Маршрутизація та CORS перед викликами Authentication та Authorization
 app.UseRouting();
@@ -108,6 +135,13 @@ app.MapGet("/health", async (SecureLabDbContext dbContext, CancellationToken can
     .WithName("GetHealth")
     .Produces(StatusCodes.Status200OK)
     .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+// Крок 2.1: Видача пари antiforgery-токенів для автентифікованого користувача
+app.MapGet("/api/auth/csrf-token", (IAntiforgery antiforgery, HttpContext http) =>
+{
+    var tokens = antiforgery.GetAndStoreTokens(http);
+    return Results.Ok(new { token = tokens.RequestToken });
+}).RequireAuthorization();
 
 app.MapIncidentEndpoints();
 app.MapLab03Identity();

@@ -107,6 +107,7 @@ document.querySelector("#login").addEventListener("submit", async event => {
   form.elements.password.value = "";
   say(`Login: ${response.status}`);
   if (response.status === 204) {
+    window.DemoCsrf?.reset();
     await loadProfile();
   } else {
     clearProfile();
@@ -124,11 +125,15 @@ document.querySelector("#incident").addEventListener("submit", async event => {
   const form = event.currentTarget;
   const data = new FormData(form);
   // Без owner, role, status, id: ними керує сервер.
-  const response = await postJson("/api/incidents", {
-    title: data.get("title"),
-    description: data.get("description"),
-    severity: data.get("severity"),
-    occurredAtUtc: new Date(data.get("occurredAt")).toISOString()
+  const response = await window.DemoCsrf.mutate("/api/incidents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: data.get("title"),
+      description: data.get("description"),
+      severity: data.get("severity"),
+      occurredAtUtc: new Date(data.get("occurredAt")).toISOString()
+    })
   });
   if (response.status === 201) {
     const created = await response.json();
@@ -145,7 +150,10 @@ document.querySelector("#incident").addEventListener("submit", async event => {
 });
 
 document.querySelector("#logout").addEventListener("click", async () => {
-  const response = await apiFetch("/api/auth/logout", { method: "POST" });
+  const response = await window.DemoCsrf.mutate("/api/auth/logout", { method: "POST" });
+  if (response.ok) {
+    window.DemoCsrf?.reset();
+  }
   clearProfile();
   document.querySelector("#incident").reset();
   setDefaultTime();

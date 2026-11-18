@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using SecureLab.Api.Data;
 using SecureLab.Api.Data.Entities;
+using SecureLab.Api.Security;
 
 namespace SecureLab.Api.Scaffolding;
 
@@ -50,7 +51,9 @@ public static class Lab03Identity
 
             var user = new ApplicationUser
             {
-                Id = Guid.NewGuid(), UserName = userName, Email = email,
+                Id = Guid.NewGuid(),
+                UserName = userName,
+                Email = email,
                 DisplayName = displayName!
             };
             var result = await users.CreateAsync(user, input.Password!);
@@ -86,10 +89,10 @@ public static class Lab03Identity
         {
             await signIn.SignOutAsync();
             return Results.NoContent();
-        });
+        }).AddEndpointFilter<AntiforgeryFilter>();
 
         app.MapGet("/api/me", GetCurrentUser).RequireAuthorization();
-        
+
         app.MapGet("/api/auth/session-check", () => Results.NoContent()).RequireAuthorization();
     }
 

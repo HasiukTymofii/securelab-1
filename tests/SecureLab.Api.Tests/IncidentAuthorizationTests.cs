@@ -13,7 +13,6 @@ public sealed class IncidentAuthorizationTests(SecureLabApiFactory factory)
     private static readonly Guid AliceInc = DbSeeder.AliceIncidentId;
     private static readonly Guid BobInc = DbSeeder.BobIncidentId;
 
-   
     private static readonly Dictionary<(SecureLabApiFactory, string), HttpClient> Clients = new();
 
     private async Task<HttpClient> As(string userName)
@@ -23,6 +22,7 @@ public sealed class IncidentAuthorizationTests(SecureLabApiFactory factory)
             var password = Environment.GetEnvironmentVariable("SeedUsers__Password")
                 ?? throw new InvalidOperationException("Set local SeedUsers__Password outside Git.");
             client = await factory.LoginAsync(userName, password);
+            await client.UseAntiforgeryTokenAsync();
             Clients[(factory, userName)] = client;
         }
         return client;
@@ -37,7 +37,6 @@ public sealed class IncidentAuthorizationTests(SecureLabApiFactory factory)
     private static Task<JsonObject?> GetJson(HttpClient client, Guid id) =>
         client.GetFromJsonAsync<JsonObject>($"/api/incidents/{id}");
 
-   
     private static async Task<Guid> CreateIncidentAsync(HttpClient client)
     {
         using var response = await client.PostAsJsonAsync("/api/incidents", new
@@ -191,10 +190,10 @@ public sealed class IncidentAuthorizationTests(SecureLabApiFactory factory)
                 })));
 
             var after = await GetJson(alice, id);
-            Assert.Equal("t2", after!["title"]!.GetValue<string>());      
-            Assert.Equal("New", after["status"]!.GetValue<string>());     
+            Assert.Equal("t2", after!["title"]!.GetValue<string>());
+            Assert.Equal("New", after["status"]!.GetValue<string>());
             Assert.Equal(before!["ownerDisplayName"]!.GetValue<string>(),
-                after["ownerDisplayName"]!.GetValue<string>());           
+                after["ownerDisplayName"]!.GetValue<string>());
             Assert.Equal(HttpStatusCode.NotFound, await StatusOf(bob.GetAsync($"/api/incidents/{id}")));
         }
         finally
@@ -216,7 +215,7 @@ public sealed class IncidentAuthorizationTests(SecureLabApiFactory factory)
             foreign.Content.Headers.ContentType?.ToString());
         var foreignBody = (await foreign.Content.ReadFromJsonAsync<JsonObject>())!;
         var unknownBody = (await unknown.Content.ReadFromJsonAsync<JsonObject>())!;
-        foreignBody.Remove("traceId");  
+        foreignBody.Remove("traceId");
         unknownBody.Remove("traceId");
         Assert.True(JsonNode.DeepEquals(unknownBody, foreignBody));
     }

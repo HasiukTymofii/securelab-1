@@ -90,6 +90,7 @@ public sealed class AuthScenarioTests(SecureLabApiFactory factory)
     public async Task A06_Logout_ThenMe_Returns401()
     {
         using var alice = await factory.LoginAsync("alice", Pwd);
+        await alice.UseAntiforgeryTokenAsync();
         using (var before = await alice.GetAsync("/api/me"))
             Assert.Equal(HttpStatusCode.OK, before.StatusCode);
         using (var logout = await alice.PostAsync("/api/auth/logout", null))

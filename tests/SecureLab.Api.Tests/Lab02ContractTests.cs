@@ -21,6 +21,7 @@ public sealed class Lab02ContractTests(SecureLabApiFactory factory)
         try
         {
             using var client = await factory.LoginAsync("alice", Pwd);
+            await client.UseAntiforgeryTokenAsync();
             using var response = await client.PostAsJsonAsync("/api/incidents", new
             {
                 title,
@@ -60,6 +61,7 @@ public sealed class Lab02ContractTests(SecureLabApiFactory factory)
         try
         {
             using var client = await factory.LoginAsync("alice", Pwd);
+            await client.UseAntiforgeryTokenAsync();
             using var first = await client.PostAsJsonAsync("/api/incidents", body);
             Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
